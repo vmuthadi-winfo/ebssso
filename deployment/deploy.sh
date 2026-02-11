@@ -34,7 +34,7 @@ fi
 
 # Check if config template exists
 if [ ! -f "./config.yaml.template" ]; then
-    echo -e "${RED}Error: config.yaml.template not found. Cannot proceed with installation.${NC}"
+    echo -e "${RED}Error: config.yaml.template not found. This file is required to initialize the configuration.${NC}"
     exit 1
 fi
 

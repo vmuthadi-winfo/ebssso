@@ -338,7 +338,7 @@ func (h *AuthHandler) Health(c *gin.Context) {
 
 	// Check database connection
 	_, err := h.db.ValidateSession(ctx, "0")
-	dbHealthy := err == nil || err.Error() != "connection error"
+	dbHealthy := err == nil
 
 	status := "healthy"
 	httpStatus := http.StatusOK

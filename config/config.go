@@ -114,7 +114,9 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// LoadFromEnv loads the configuration based on the EBS_ENV environment variable
+// LoadFromEnv loads the configuration based on the EBS_ENV environment variable.
+// It first tries to load config.yaml, and if that doesn't exist, falls back to
+// config.{EBS_ENV}.yaml (e.g., config.DEV.yaml, config.PROD.yaml).
 func LoadFromEnv() (*Config, error) {
 	env := os.Getenv("EBS_ENV")
 	if env == "" {
