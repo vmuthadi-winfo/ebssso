@@ -69,13 +69,13 @@ func (h *AuthHandler) generateState() (string, error) {
 		return "", err
 	}
 	state := base64.URLEncoding.EncodeToString(b)
-	
+
 	// Store state with expiration
 	h.states[state] = time.Now().Add(10 * time.Minute)
-	
+
 	// Clean up old states
 	go h.cleanupStates()
-	
+
 	return state, nil
 }
 
@@ -85,12 +85,12 @@ func (h *AuthHandler) validateState(state string) bool {
 	if !exists {
 		return false
 	}
-	
+
 	if time.Now().After(expiry) {
 		delete(h.states, state)
 		return false
 	}
-	
+
 	delete(h.states, state)
 	return true
 }
@@ -308,7 +308,7 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 // clearEBSCookies clears all EBS session cookies
 func (h *AuthHandler) clearEBSCookies(c *gin.Context) {
 	cookies := []string{"ICX_SESSION", "ebs_session", h.config.Session.CookieName}
-	
+
 	for _, cookie := range cookies {
 		c.SetCookie(
 			cookie,
@@ -325,22 +325,22 @@ func (h *AuthHandler) clearEBSCookies(c *gin.Context) {
 // Health handles the /health route for health checks
 func (h *AuthHandler) Health(c *gin.Context) {
 	ctx := c.Request.Context()
-	
+
 	// Check database connection
 	_, err := h.db.ValidateSession(ctx, "0")
 	dbHealthy := err == nil || err.Error() != "connection error"
 
 	status := "healthy"
 	httpStatus := http.StatusOK
-	
+
 	if !dbHealthy {
 		status = "unhealthy"
 		httpStatus = http.StatusServiceUnavailable
 	}
 
 	c.JSON(httpStatus, gin.H{
-		"status":   status,
-		"database": dbHealthy,
+		"status":    status,
+		"database":  dbHealthy,
 		"timestamp": time.Now().UTC().Format(time.RFC3339),
 	})
 }

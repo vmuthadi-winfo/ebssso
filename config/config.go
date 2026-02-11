@@ -9,13 +9,13 @@ import (
 
 // Config represents the application configuration
 type Config struct {
-	Environment string          `yaml:"environment"`
-	Server      ServerConfig    `yaml:"server"`
-	OIDC        OIDCConfig      `yaml:"oidc"`
-	Database    DatabaseConfig  `yaml:"database"`
-	EBS         EBSConfig       `yaml:"ebs"`
-	Logging     LoggingConfig   `yaml:"logging"`
-	Session     SessionConfig   `yaml:"session"`
+	Environment string         `yaml:"environment"`
+	Server      ServerConfig   `yaml:"server"`
+	OIDC        OIDCConfig     `yaml:"oidc"`
+	Database    DatabaseConfig `yaml:"database"`
+	EBS         EBSConfig      `yaml:"ebs"`
+	Logging     LoggingConfig  `yaml:"logging"`
+	Session     SessionConfig  `yaml:"session"`
 }
 
 // ServerConfig holds server-related settings

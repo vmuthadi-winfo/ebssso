@@ -1,0 +1,34 @@
+[Unit]
+Description=EBS SSO Gateway Service
+Documentation=https://github.com/vmuthadi-winfo/ebssso
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ebssso
+Group=ebssso
+WorkingDirectory=/opt/ebssso
+ExecStart=/usr/local/bin/ebssso
+Environment="EBS_ENV=PROD"
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/ebssso/logs
+
+# Restart policy
+Restart=on-failure
+RestartSec=10s
+StartLimitInterval=200s
+StartLimitBurst=5
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ebssso
+
+[Install]
+WantedBy=multi-user.target
