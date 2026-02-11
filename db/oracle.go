@@ -65,9 +65,9 @@ func (o *OracleDB) Close() error {
 // GetUserByEmail looks up a user in FND_USER by email
 func (o *OracleDB) GetUserByEmail(ctx context.Context, email string) (string, error) {
 	var userName string
-	query := `SELECT USER_NAME FROM FND_USER WHERE UPPER(EMAIL_ADDRESS) = UPPER(:1) AND END_DATE IS NULL`
+	query := `SELECT USER_NAME FROM FND_USER WHERE UPPER(EMAIL_ADDRESS) = UPPER(:email) AND END_DATE IS NULL`
 
-	err := o.db.QueryRowContext(ctx, query, email).Scan(&userName)
+	err := o.db.QueryRowContext(ctx, query, sql.Named("email", email)).Scan(&userName)
 	if err == sql.ErrNoRows {
 		return "", fmt.Errorf("user not found with email: %s", email)
 	}
@@ -151,12 +151,12 @@ func (o *OracleDB) ValidateSession(ctx context.Context, sessionID string) (bool,
 	query := `
 		SELECT COUNT(*)
 		FROM icx_sessions
-		WHERE session_id = :1
+		WHERE session_id = :session_id
 		AND disabled_flag != 'Y'
 		AND (last_connect + limit_time / 86400) > SYSDATE
 	`
 
-	err := o.db.QueryRowContext(ctx, query, sessionID).Scan(&count)
+	err := o.db.QueryRowContext(ctx, query, sql.Named("session_id", sessionID)).Scan(&count)
 	if err != nil {
 		return false, fmt.Errorf("failed to validate session: %w", err)
 	}
@@ -170,10 +170,10 @@ func (o *OracleDB) EndSession(ctx context.Context, sessionID string) error {
 		UPDATE icx_sessions
 		SET disabled_flag = 'Y',
 		    last_connect = SYSDATE
-		WHERE session_id = :1
+		WHERE session_id = :session_id
 	`
 
-	_, err := o.db.ExecContext(ctx, query, sessionID)
+	_, err := o.db.ExecContext(ctx, query, sql.Named("session_id", sessionID))
 	if err != nil {
 		return fmt.Errorf("failed to end session: %w", err)
 	}

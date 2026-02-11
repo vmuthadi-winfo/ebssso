@@ -32,6 +32,12 @@ if [ ! -f "./$APP_NAME" ]; then
     exit 1
 fi
 
+# Check if config template exists
+if [ ! -f "./config.yaml.template" ]; then
+    echo -e "${RED}Error: config.yaml.template not found. Cannot proceed with installation.${NC}"
+    exit 1
+fi
+
 # Create service user if it doesn't exist
 if ! id "$SERVICE_USER" &>/dev/null; then
     echo -e "${YELLOW}Creating service user: $SERVICE_USER${NC}"

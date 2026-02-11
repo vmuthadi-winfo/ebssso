@@ -1,7 +1,7 @@
 FROM golang:1.21-alpine AS builder
 
-# Install build dependencies
-RUN apk add --no-cache git make
+# Install build dependencies including CGO requirements for godror
+RUN apk add --no-cache git make gcc musl-dev
 
 # Set working directory
 WORKDIR /app
@@ -15,8 +15,8 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o ebssso .
+# Build the application with CGO enabled for Oracle driver
+RUN go build -o ebssso .
 
 # Final stage
 FROM alpine:latest

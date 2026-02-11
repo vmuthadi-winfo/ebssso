@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -25,6 +26,7 @@ type AuthHandler struct {
 	db           *db.OracleDB
 	logger       *logrus.Logger
 	states       map[string]time.Time // Simple state storage (in production, use Redis or similar)
+	statesMutex  sync.RWMutex         // Protects states map from concurrent access
 }
 
 // NewAuthHandler creates a new authentication handler
@@ -70,8 +72,10 @@ func (h *AuthHandler) generateState() (string, error) {
 	}
 	state := base64.URLEncoding.EncodeToString(b)
 
-	// Store state with expiration
+	// Store state with expiration (thread-safe)
+	h.statesMutex.Lock()
 	h.states[state] = time.Now().Add(10 * time.Minute)
+	h.statesMutex.Unlock()
 
 	// Clean up old states
 	go h.cleanupStates()
@@ -81,6 +85,9 @@ func (h *AuthHandler) generateState() (string, error) {
 
 // validateState checks if the state is valid and not expired
 func (h *AuthHandler) validateState(state string) bool {
+	h.statesMutex.Lock()
+	defer h.statesMutex.Unlock()
+
 	expiry, exists := h.states[state]
 	if !exists {
 		return false
@@ -97,6 +104,9 @@ func (h *AuthHandler) validateState(state string) bool {
 
 // cleanupStates removes expired states
 func (h *AuthHandler) cleanupStates() {
+	h.statesMutex.Lock()
+	defer h.statesMutex.Unlock()
+
 	now := time.Now()
 	for state, expiry := range h.states {
 		if now.After(expiry) {

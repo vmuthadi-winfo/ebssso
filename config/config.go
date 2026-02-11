@@ -1,7 +1,9 @@
 package config
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 
 	"gopkg.in/yaml.v3"
@@ -121,7 +123,7 @@ func LoadFromEnv() (*Config, error) {
 
 	// Try to load config.yaml first, then fall back to environment-specific config
 	configFile := "config.yaml"
-	if _, err := os.Stat(configFile); os.IsNotExist(err) {
+	if _, err := os.Stat(configFile); errors.Is(err, fs.ErrNotExist) {
 		configFile = fmt.Sprintf("config.%s.yaml", env)
 	}
 
