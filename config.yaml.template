@@ -1,0 +1,56 @@
+# EBS SSO Gateway Configuration Template
+# Copy this file to config.yaml and update with your environment-specific values
+
+# Environment name (DEV, TEST, PROD)
+environment: "DEV"
+
+# Server configuration
+server:
+  port: 8080
+  host: "0.0.0.0"
+  base_url: "http://localhost:8080"  # Public URL for redirect URIs
+
+# OIDC Provider Configuration
+oidc:
+  provider_url: "https://login.microsoftonline.com/{tenant-id}/v2.0"  # For Entra ID
+  # provider_url: "https://your-okta-domain.okta.com"  # For Okta
+  # provider_url: "https://your-ping-domain.com"  # For Ping
+  client_id: "your-client-id"
+  client_secret: "your-client-secret"
+  redirect_url: "http://localhost:8080/callback"
+  scopes:
+    - "openid"
+    - "profile"
+    - "email"
+  # Claim to use for user identification (email, upn, preferred_username)
+  user_claim: "email"
+
+# Oracle Database Configuration
+database:
+  username: "apps"
+  password: "apps_password"
+  connection_string: "localhost:1521/EBSDB"
+  # Format: host:port/service_name or (DESCRIPTION=...)
+  pool_size: 10
+  max_open_conns: 20
+  max_idle_conns: 5
+
+# EBS Configuration
+ebs:
+  base_url: "http://your-ebs-server:8000"
+  home_page: "/OA_HTML/AppsLogin"
+  # Cookie domain for EBS cookies (e.g., .yourdomain.com)
+  cookie_domain: "localhost"
+  # Cookie secure flag (set to true in production with HTTPS)
+  cookie_secure: false
+
+# Logging Configuration
+logging:
+  level: "info"  # debug, info, warn, error
+  format: "json"  # json or text
+  output: "stdout"  # stdout or file path
+
+# Session Configuration
+session:
+  timeout_minutes: 480  # 8 hours
+  cookie_name: "EBS_SSO_SESSION"
