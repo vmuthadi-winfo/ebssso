@@ -24,6 +24,21 @@ oidc:
     - "email"
   # Claim to use for user identification (email, upn, preferred_username)
   user_claim: "email"
+  
+  # Group-Based Access Control (AD Groups)
+  group_claim: "groups"  # Claim containing user groups (e.g., "groups" for Entra ID)
+  allowed_groups:        # List of allowed AD groups (empty = allow all)
+    # - "EBS_Users"
+    # - "Finance_Team"
+  denied_groups:         # List of denied groups (takes precedence over allowed)
+    # - "Contractors"
+  require_group_match: false  # If true, user must be in at least one allowed group
+  group_match_strategy: "any"  # "any" (one group) or "all" (all groups)
+  
+  # Connection and retry settings
+  timeout: 30           # Connection timeout in seconds
+  max_retries: 3        # Number of retries for transient failures
+  retry_delay: 2        # Delay between retries in seconds
 
 # Oracle Database Configuration
 database:
@@ -81,3 +96,55 @@ logging:
 session:
   timeout_minutes: 480  # 8 hours
   cookie_name: "EBS_SSO_SESSION"
+  
+  # Session synchronization with EBS
+  sync_with_ebs: true            # Sync SSO timeout with EBS session timeout
+  refresh_before_expiry: 5       # Minutes before expiry to trigger refresh
+  enable_auto_refresh: true      # Enable automatic session refresh
+  
+  # Session monitoring and cleanup
+  enable_session_tracking: true  # Track active sessions
+  cleanup_interval: 10           # Cleanup interval in minutes
+  max_concurrent_sessions: 0     # Max concurrent sessions per user (0 = unlimited)
+  
+  # Warning and grace period
+  expiry_warning_minutes: 10     # Minutes before expiry to warn user
+  grace_period_minutes: 5        # Grace period after session expiry
+
+# Resilience and Failure Handling
+resilience:
+  # Circuit breaker settings
+  enable_circuit_breaker: true
+  failure_threshold: 5           # Number of failures before opening circuit
+  success_threshold: 2           # Number of successes to close circuit
+  circuit_timeout: 60            # Timeout before trying again in seconds
+  
+  # Retry settings
+  enable_retry: true
+  max_retries: 3                 # Max retry attempts
+  retry_delay: 2                 # Initial retry delay in seconds
+  retry_backoff: true            # Use exponential backoff
+  
+  # Timeout settings
+  database_timeout: 10           # DB operation timeout in seconds
+  oidc_timeout: 30               # OIDC operation timeout in seconds
+  ebs_timeout: 30                # EBS operation timeout in seconds
+  
+  # Health check settings
+  enable_health_check: true
+  health_check_interval: 60      # Health check interval in seconds
+
+# Authorization Configuration
+authorization:
+  # Enable authorization checks
+  enable_authorization: false    # Set to true to enable group-based authorization
+  
+  # Access control mode
+  mode: "permissive"             # "permissive" or "strict"
+  
+  # Failed authorization action
+  on_failure_action: "deny"      # "deny" or "log"
+  
+  # Audit logging
+  enable_audit_log: true
+  audit_log_path: "/var/log/ebssso/audit.log"

@@ -20,22 +20,28 @@ import (
 
 // AuthHandler handles OIDC authentication
 type AuthHandler struct {
-	config       *config.Config
-	oauthConfig  *oauth2.Config
-	oidcProvider *oidc.Provider
-	verifier     *oidc.IDTokenVerifier
-	db           *db.OracleDB
-	logger       *logrus.Logger
-	states       map[string]time.Time // Simple state storage (in production, use Redis or similar)
-	statesMutex  sync.RWMutex         // Protects states map from concurrent access
+	config              *config.Config
+	oauthConfig         *oauth2.Config
+	oidcProvider        *oidc.Provider
+	verifier            *oidc.IDTokenVerifier
+	db                  *db.OracleDB
+	logger              *logrus.Logger
+	states              map[string]time.Time // Simple state storage (in production, use Redis or similar)
+	statesMutex         sync.RWMutex         // Protects states map from concurrent access
+	authzManager        *AuthorizationManager
+	sessionManager      *SessionManager
+	resilienceManager   *ResilienceManager
 }
 
 // NewAuthHandler creates a new authentication handler
 func NewAuthHandler(cfg *config.Config, database *db.OracleDB, logger *logrus.Logger) (*AuthHandler, error) {
 	ctx := context.Background()
 
-	// Initialize OIDC provider
-	provider, err := oidc.NewProvider(ctx, cfg.OIDC.ProviderURL)
+	// Initialize OIDC provider with timeout
+	providerCtx, cancel := context.WithTimeout(ctx, time.Duration(cfg.OIDC.Timeout)*time.Second)
+	defer cancel()
+	
+	provider, err := oidc.NewProvider(providerCtx, cfg.OIDC.ProviderURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize OIDC provider: %w", err)
 	}
@@ -53,15 +59,27 @@ func NewAuthHandler(cfg *config.Config, database *db.OracleDB, logger *logrus.Lo
 	verifier := provider.Verifier(&oidc.Config{
 		ClientID: cfg.OIDC.ClientID,
 	})
+	
+	// Initialize authorization manager
+	authzManager := NewAuthorizationManager(cfg, logger)
+	
+	// Initialize session manager
+	sessionManager := NewSessionManager(cfg, database, logger)
+	
+	// Initialize resilience manager
+	resilienceManager := NewResilienceManager(cfg, logger)
 
 	return &AuthHandler{
-		config:       cfg,
-		oauthConfig:  oauthConfig,
-		oidcProvider: provider,
-		verifier:     verifier,
-		db:           database,
-		logger:       logger,
-		states:       make(map[string]time.Time),
+		config:            cfg,
+		oauthConfig:       oauthConfig,
+		oidcProvider:      provider,
+		verifier:          verifier,
+		db:                database,
+		logger:            logger,
+		states:            make(map[string]time.Time),
+		authzManager:      authzManager,
+		sessionManager:    sessionManager,
+		resilienceManager: resilienceManager,
 	}, nil
 }
 
@@ -252,9 +270,39 @@ func (h *AuthHandler) Callback(c *gin.Context) {
 		"user_identifier": userIdentifier,
 		"claim_type":      h.config.OIDC.UserClaim,
 	}).Info("User authenticated via OIDC")
+	
+	// Extract and check groups for authorization
+	groups := h.authzManager.ExtractGroups(claims)
+	
+	h.logger.WithFields(logrus.Fields{
+		"user_identifier": userIdentifier,
+		"groups":          groups,
+	}).Debug("Extracted user groups from claims")
+	
+	// Perform group-based authorization
+	if h.config.Authorization.EnableAuthorization {
+		allowed, reason := h.authzManager.AuthorizeUser(ctx, userIdentifier, groups)
+		if !allowed {
+			h.logger.WithFields(logrus.Fields{
+				"user_identifier": userIdentifier,
+				"reason":          reason,
+			}).Warn("User authorization failed")
+			
+			c.HTML(http.StatusForbidden, "error.html", gin.H{
+				"error": fmt.Sprintf("Access denied: %s", reason),
+			})
+			return
+		}
+	}
 
-	// Look up user in EBS
-	userName, err := h.db.GetUserByEmail(ctx, userIdentifier)
+	// Look up user in EBS with resilience
+	var userName string
+	err = h.resilienceManager.ExecuteWithRetry(ctx, func() error {
+		var lookupErr error
+		userName, lookupErr = h.db.GetUserByEmail(ctx, userIdentifier)
+		return lookupErr
+	})
+	
 	if err != nil {
 		h.logger.WithError(err).WithField("user_identifier", userIdentifier).Error("User not found in EBS")
 		c.HTML(http.StatusUnauthorized, "error.html", gin.H{
@@ -263,8 +311,14 @@ func (h *AuthHandler) Callback(c *gin.Context) {
 		return
 	}
 
-	// Create EBS session
-	sessionID, err := h.db.CreateEBSSession(ctx, userName)
+	// Create EBS session with resilience
+	var sessionID string
+	err = h.resilienceManager.ExecuteWithCircuitBreaker("ebs", func() error {
+		var sessionErr error
+		sessionID, sessionErr = h.db.CreateEBSSession(ctx, userName)
+		return sessionErr
+	})
+	
 	if err != nil {
 		h.logger.WithError(err).WithField("user_name", userName).Error("Failed to create EBS session")
 		c.HTML(http.StatusInternalServerError, "error.html", gin.H{
@@ -272,13 +326,22 @@ func (h *AuthHandler) Callback(c *gin.Context) {
 		})
 		return
 	}
+	
+	// Track session if enabled
+	if h.config.Session.EnableSessionTracking {
+		if err := h.sessionManager.TrackSession(sessionID, userIdentifier, userName); err != nil {
+			h.logger.WithError(err).Warn("Failed to track session")
+		}
+	}
 
 	// Set EBS cookies
 	h.setEBSCookies(c, sessionID)
 
 	h.logger.WithFields(logrus.Fields{
 		"user_name":  userName,
+		"user_email": userIdentifier,
 		"session_id": sessionID,
+		"groups":     groups,
 	}).Info("Successfully created EBS session, redirecting to EBS")
 
 	// Determine redirect URL - check for return URL (deep link support)
