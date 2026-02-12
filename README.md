@@ -2,12 +2,44 @@
 
 A lightweight, independent OIDC-based Single Sign-On (SSO) gateway for Oracle E-Business Suite 12.2, built in Go.
 
-## Overview
+## Features
 
-The EBS SSO Gateway enables modern OIDC authentication for Oracle EBS without requiring WebLogic or OAM. It supports multiple OIDC providers including:
-- Microsoft Entra ID (formerly Azure AD)
-- Okta
-- Ping Identity
+The EBS SSO Gateway enables modern OIDC authentication for Oracle EBS without requiring WebLogic or OAM. It supports:
+
+### Authentication & SSO
+- Multiple OIDC providers (Entra ID, Okta, Ping Identity)
+- CSRF-protected authentication flow
+- Secure session management with EBS
+- Automatic cookie injection for EBS sessions
+
+### EBS Integration Methods
+1. **Direct Database Connection** (Legacy)
+   - Direct SQL access to APPS schema
+   - Simple setup for development
+
+2. **DBC File Method** (Recommended)
+   - Uses EBS DBC files for secure connection
+   - GUEST_USER_PWD authentication
+   - Trusted node architecture
+   - APPS_CONNECT UMX role integration
+   - No direct APPS schema password needed
+
+### WebADI and Advanced Features
+- **WebADI Support**: Full Excel-based data integration
+- **Deep Link Preservation**: Direct access to EBS forms and functions
+- **Request Proxying**: Session-aware proxy for authenticated EBS requests
+- **Return URL Handling**: Preserves destination during authentication
+- **Path Whitelisting**: Configurable security for proxied requests
+- **File Upload Support**: Handles large WebADI uploads (configurable size limits)
+
+### Supported EBS Access Methods
+- Web-based self-service pages (/OA_HTML/*)
+- WebADI desktop integrator (/webadi/*)
+- Servlets and JSP requests (/servlets/*)
+- Oracle Forms access (/forms/*)
+- Direct function and responsibility links
+
+For detailed information about WebADI, DBC files, and trusted nodes, see [WEBADI_GUIDE.md](WEBADI_GUIDE.md).
 
 ## Architecture
 
@@ -47,21 +79,52 @@ ebssso/
 
 ## Configuration
 
+### Quick Start Configuration
+
 1. Copy the configuration template:
    ```bash
    cp config.yaml.template config.yaml
    ```
 
-2. Edit `config.yaml` with your environment-specific settings:
-   - OIDC provider details (URL, Client ID, Client Secret)
-   - Oracle database connection string
-   - EBS base URL and cookie settings
-   - Logging preferences
+2. Choose your connection method:
 
-3. Set the environment variable (optional):
-   ```bash
-   export EBS_ENV=DEV  # or TEST, PROD
+   **Option A: DBC File Method (Recommended for Production)**
+   ```yaml
+   database:
+     use_dbc: true
+     dbc_file: "/path/to/secure/appsweb.dbc"
+     apps_user: "SYSADMIN"
    ```
+
+   **Option B: Direct Connection (Development/Legacy)**
+   ```yaml
+   database:
+     use_dbc: false
+     username: "apps"
+     password: "apps_password"
+     connection_string: "localhost:1521/EBSDB"
+   ```
+
+3. Configure OIDC provider:
+   ```yaml
+   oidc:
+     provider_url: "https://login.microsoftonline.com/{tenant}/v2.0"
+     client_id: "your-client-id"
+     client_secret: "your-client-secret"
+   ```
+
+4. Enable WebADI support (optional):
+   ```yaml
+   ebs:
+     enable_proxy: true
+     enable_return_url: true
+     allowed_paths:
+       - "/OA_HTML/*"
+       - "/webadi/*"
+   ```
+
+For complete configuration options, see `config.yaml.template`.  
+For WebADI and DBC setup, see [WEBADI_GUIDE.md](WEBADI_GUIDE.md).
 
 ## Building
 
@@ -92,10 +155,15 @@ GOOS=linux GOARCH=amd64 go build -o ebssso
 ## API Endpoints
 
 - `GET /` - Redirects to `/login`
-- `GET /login` - Initiates OIDC authentication flow
+- `GET /login` - Initiates OIDC authentication flow (supports `?return_url=` parameter)
 - `GET /callback` - Handles OIDC provider callback
 - `GET /logout` - Terminates EBS session and clears cookies
 - `GET /health` - Health check endpoint
+- `ANY /OA_HTML/*` - Proxy to EBS (if proxy enabled)
+- `ANY /webadi/*` - WebADI proxy (if proxy enabled)
+- `ANY /servlets/*` - Servlet proxy (if proxy enabled)
+
+**Proxy Routes:** Additional routes are registered based on `ebs.allowed_paths` configuration.
 
 ## Environment Variables
 
