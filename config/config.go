@@ -39,9 +39,17 @@ type OIDCConfig struct {
 
 // DatabaseConfig holds Oracle database connection settings
 type DatabaseConfig struct {
+	// Legacy direct connection (deprecated)
 	Username         string `yaml:"username"`
 	Password         string `yaml:"password"`
 	ConnectionString string `yaml:"connection_string"`
+	
+	// DBC file approach (recommended)
+	DBCFile          string `yaml:"dbc_file"`
+	AppsUser         string `yaml:"apps_user"`
+	UseDBC           bool   `yaml:"use_dbc"` // If true, use DBC file method
+	
+	// Connection pool settings
 	PoolSize         int    `yaml:"pool_size"`
 	MaxOpenConns     int    `yaml:"max_open_conns"`
 	MaxIdleConns     int    `yaml:"max_idle_conns"`
@@ -49,10 +57,22 @@ type DatabaseConfig struct {
 
 // EBSConfig holds EBS-specific settings
 type EBSConfig struct {
-	BaseURL      string `yaml:"base_url"`
-	HomePage     string `yaml:"home_page"`
-	CookieDomain string `yaml:"cookie_domain"`
-	CookieSecure bool   `yaml:"cookie_secure"`
+	BaseURL           string   `yaml:"base_url"`
+	HomePage          string   `yaml:"home_page"`
+	CookieDomain      string   `yaml:"cookie_domain"`
+	CookieSecure      bool     `yaml:"cookie_secure"`
+	
+	// Trusted node configuration
+	TrustedNodeName   string   `yaml:"trusted_node_name"`
+	TrustedNodeSecret string   `yaml:"trusted_node_secret"`
+	
+	// Proxy configuration for EBS requests
+	EnableProxy       bool     `yaml:"enable_proxy"`
+	AllowedPaths      []string `yaml:"allowed_paths"`
+	
+	// WebADI and form support
+	EnableReturnURL   bool     `yaml:"enable_return_url"`
+	MaxUploadSize     int64    `yaml:"max_upload_size"` // in bytes
 }
 
 // LoggingConfig holds logging settings
@@ -102,15 +122,35 @@ func (c *Config) Validate() error {
 	if c.OIDC.RedirectURL == "" {
 		return fmt.Errorf("oidc.redirect_url is required")
 	}
-	if c.Database.ConnectionString == "" {
-		return fmt.Errorf("database.connection_string is required")
+	
+	// Validate database configuration
+	if c.Database.UseDBC {
+		// DBC file method
+		if c.Database.DBCFile == "" {
+			return fmt.Errorf("database.dbc_file is required when use_dbc is true")
+		}
+		if c.Database.AppsUser == "" {
+			return fmt.Errorf("database.apps_user is required when use_dbc is true")
+		}
+	} else {
+		// Legacy direct connection method
+		if c.Database.ConnectionString == "" {
+			return fmt.Errorf("database.connection_string is required when use_dbc is false")
+		}
+		if c.Database.Username == "" {
+			return fmt.Errorf("database.username is required when use_dbc is false")
+		}
 	}
-	if c.Database.Username == "" {
-		return fmt.Errorf("database.username is required")
-	}
+	
 	if c.EBS.BaseURL == "" {
 		return fmt.Errorf("ebs.base_url is required")
 	}
+	
+	// Set defaults
+	if c.EBS.MaxUploadSize == 0 {
+		c.EBS.MaxUploadSize = 100 * 1024 * 1024 // 100MB default
+	}
+	
 	return nil
 }
 

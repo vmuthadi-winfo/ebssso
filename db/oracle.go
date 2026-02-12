@@ -13,19 +13,53 @@ import (
 
 // OracleDB represents the Oracle database connection
 type OracleDB struct {
-	db     *sql.DB
-	config *config.DatabaseConfig
-	logger *logrus.Logger
+	db        *sql.DB
+	config    *config.DatabaseConfig
+	logger    *logrus.Logger
+	fndClient *FNDAPIClient // FND API client for EBS operations
+	useDBC    bool          // Whether using DBC file method
 }
 
 // NewOracleDB creates a new Oracle database connection
 func NewOracleDB(cfg *config.DatabaseConfig, logger *logrus.Logger) (*OracleDB, error) {
-	// Build connection string
-	connStr := fmt.Sprintf("%s/%s@%s",
-		cfg.Username,
-		cfg.Password,
-		cfg.ConnectionString,
-	)
+	var connStr string
+	var useDBC bool
+	
+	// Determine connection method
+	if cfg.UseDBC {
+		// DBC file method
+		logger.Info("Using DBC file method for database connection")
+		
+		dbcConfig, err := ParseDBCFile(cfg.DBCFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse DBC file: %w", err)
+		}
+		
+		// Use GUEST_USER_PWD from DBC file for initial connection
+		// This is the EBS SSO authentication method
+		connStr = fmt.Sprintf("%s/%s@%s",
+			"GUEST",
+			dbcConfig.GuestUserPwd,
+			dbcConfig.BuildConnectionString(),
+		)
+		
+		logger.WithFields(logrus.Fields{
+			"host": dbcConfig.Host,
+			"port": dbcConfig.Port,
+			"sid":  dbcConfig.SID,
+		}).Info("Connecting using DBC configuration")
+		
+		useDBC = true
+	} else {
+		// Legacy direct connection method
+		logger.Warn("Using legacy direct database connection (deprecated)")
+		connStr = fmt.Sprintf("%s/%s@%s",
+			cfg.Username,
+			cfg.Password,
+			cfg.ConnectionString,
+		)
+		useDBC = false
+	}
 
 	db, err := sql.Open("godror", connStr)
 	if err != nil {
@@ -46,11 +80,16 @@ func NewOracleDB(cfg *config.DatabaseConfig, logger *logrus.Logger) (*OracleDB, 
 	}
 
 	logger.Info("Successfully connected to Oracle database")
+	
+	// Create FND API client
+	fndClient := NewFNDAPIClient(db, logger)
 
 	return &OracleDB{
-		db:     db,
-		config: cfg,
-		logger: logger,
+		db:        db,
+		config:    cfg,
+		logger:    logger,
+		fndClient: fndClient,
+		useDBC:    useDBC,
 	}, nil
 }
 
@@ -63,7 +102,26 @@ func (o *OracleDB) Close() error {
 }
 
 // GetUserByEmail looks up a user in FND_USER by email
+// Uses FND API if DBC method is enabled, otherwise falls back to direct SQL
 func (o *OracleDB) GetUserByEmail(ctx context.Context, email string) (string, error) {
+	if o.useDBC {
+		// Use FND API method
+		userID, userName, err := o.fndClient.GetUserIDByEmail(ctx, email)
+		if err != nil {
+			return "", err
+		}
+		
+		o.logger.WithFields(logrus.Fields{
+			"email":     email,
+			"user_id":   userID,
+			"user_name": userName,
+			"method":    "FND_API",
+		}).Info("Found EBS user")
+		
+		return userName, nil
+	}
+	
+	// Legacy direct SQL method
 	var userName string
 	query := `SELECT USER_NAME FROM FND_USER WHERE UPPER(EMAIL_ADDRESS) = UPPER(:email) AND END_DATE IS NULL`
 
@@ -78,17 +136,47 @@ func (o *OracleDB) GetUserByEmail(ctx context.Context, email string) (string, er
 	o.logger.WithFields(logrus.Fields{
 		"email":     email,
 		"user_name": userName,
+		"method":    "DIRECT_SQL",
 	}).Info("Found EBS user")
 
 	return userName, nil
 }
 
 // CreateEBSSession creates an EBS session for the given user
+// Uses FND API SSO method if DBC is enabled, otherwise legacy PL/SQL
 func (o *OracleDB) CreateEBSSession(ctx context.Context, userName string) (string, error) {
+	if o.useDBC {
+		// Use FND API SSO authentication method
+		userID, _, err := o.fndClient.GetUserIDByEmail(ctx, userName)
+		if err != nil {
+			// Try to get user ID by username instead
+			var uid int64
+			query := `SELECT user_id FROM fnd_user WHERE user_name = :user_name AND end_date IS NULL`
+			err = o.db.QueryRowContext(ctx, query, sql.Named("user_name", userName)).Scan(&uid)
+			if err != nil {
+				return "", fmt.Errorf("failed to get user ID: %w", err)
+			}
+			userID = uid
+		}
+		
+		sessionID, err := o.fndClient.CreateSessionViaSSOAuth(ctx, userID, userName)
+		if err != nil {
+			return "", err
+		}
+		
+		o.logger.WithFields(logrus.Fields{
+			"user_name":  userName,
+			"user_id":    userID,
+			"session_id": sessionID,
+			"method":     "FND_SSO",
+		}).Info("Created EBS session")
+		
+		return sessionID, nil
+	}
+	
+	// Legacy direct PL/SQL method
 	var sessionID string
 
-	// PL/SQL block to create EBS session
-	// This calls the FND session management APIs to create a valid ICX session
 	plsql := `
 	DECLARE
 		l_session_id NUMBER;
@@ -140,6 +228,7 @@ func (o *OracleDB) CreateEBSSession(ctx context.Context, userName string) (strin
 	o.logger.WithFields(logrus.Fields{
 		"user_name":  userName,
 		"session_id": sessionID,
+		"method":     "DIRECT_PLSQL",
 	}).Info("Created EBS session")
 
 	return sessionID, nil

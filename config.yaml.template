@@ -27,10 +27,18 @@ oidc:
 
 # Oracle Database Configuration
 database:
+  # DBC File Method (Recommended for production - uses APPS_CONNECT UMX role)
+  use_dbc: false  # Set to true to use DBC file method
+  dbc_file: "/path/to/secure/appsweb.dbc"  # Path to EBS DBC file
+  apps_user: "SYSADMIN"  # Application user with APPS_CONNECT UMX role
+  
+  # Legacy Direct Connection Method (Deprecated)
   username: "apps"
   password: "apps_password"
   connection_string: "localhost:1521/EBSDB"
   # Format: host:port/service_name or (DESCRIPTION=...)
+  
+  # Connection Pool Settings
   pool_size: 10
   max_open_conns: 20
   max_idle_conns: 5
@@ -39,10 +47,29 @@ database:
 ebs:
   base_url: "http://your-ebs-server:8000"
   home_page: "/OA_HTML/AppsLogin"
+  
   # Cookie domain for EBS cookies (e.g., .yourdomain.com)
   cookie_domain: "localhost"
   # Cookie secure flag (set to true in production with HTTPS)
   cookie_secure: false
+  
+  # Trusted Node Configuration (for DBC file method)
+  trusted_node_name: "SSO_GATEWAY_NODE"
+  trusted_node_secret: "your-node-secret"  # Shared secret for trusted node
+  
+  # EBS Request Proxy Support (for WebADI, forms, etc.)
+  enable_proxy: true  # Enable proxying authenticated EBS requests
+  enable_return_url: true  # Enable deep link support (WebADI, forms)
+  max_upload_size: 104857600  # Max upload size in bytes (100MB default)
+  
+  # Allowed paths for proxy (empty = allow all)
+  allowed_paths:
+    - "/OA_HTML/*"
+    - "/webadi/*"
+    - "/servlets/*"
+    - "/forms/*"
+    - "/oa_servlets/*"
+    - "/servlet/*"
 
 # Logging Configuration
 logging:

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -48,6 +49,13 @@ func main() {
 	if err != nil {
 		logger.WithError(err).Fatal("Failed to initialize authentication handler")
 	}
+	
+	// Initialize proxy handler if enabled
+	var proxyHandler *handlers.EBSProxyHandler
+	if cfg.EBS.EnableProxy {
+		proxyHandler = handlers.NewEBSProxyHandler(cfg, oracleDB, logger)
+		logger.Info("EBS proxy mode enabled for WebADI and form support")
+	}
 
 	// Set Gin mode based on environment
 	if cfg.Environment == "PROD" {
@@ -72,6 +80,25 @@ func main() {
 	router.GET("/callback", authHandler.Callback)
 	router.GET("/logout", authHandler.Logout)
 	router.GET("/health", authHandler.Health)
+	
+	// Register proxy routes if enabled
+	if cfg.EBS.EnableProxy && proxyHandler != nil {
+		// Proxy all EBS paths
+		for _, path := range cfg.EBS.AllowedPaths {
+			// Convert wildcard patterns to Gin route patterns
+			ginPath := convertToGinPath(path)
+			
+			logger.WithField("path", ginPath).Info("Registering EBS proxy route")
+			
+			// Register for all HTTP methods
+			router.Any(ginPath, proxyHandler.ProxyRequest)
+		}
+		
+		// If no specific paths configured, add a catch-all
+		if len(cfg.EBS.AllowedPaths) == 0 {
+			logger.Warn("No allowed_paths configured, proxying disabled for security")
+		}
+	}
 
 	// Create HTTP server
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
@@ -109,6 +136,15 @@ func main() {
 	}
 
 	logger.Info("Server exited")
+}
+
+// convertToGinPath converts wildcard patterns to Gin route patterns
+func convertToGinPath(pattern string) string {
+	// Convert /path/* to /path/*filepath for Gin
+	if strings.HasSuffix(pattern, "/*") {
+		return strings.TrimSuffix(pattern, "/*") + "/*filepath"
+	}
+	return pattern
 }
 
 // configureLogger sets up logger based on configuration

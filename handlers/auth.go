@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -124,6 +125,35 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			"error": "Failed to initialize login",
 		})
 		return
+	}
+
+	// Capture return URL for deep links (WebADI, forms, etc.)
+	returnURL := c.Query("return_url")
+	if returnURL == "" {
+		returnURL = c.Request.Header.Get("Referer")
+	}
+	
+	// Store return URL in session/state if enabled
+	if h.config.EBS.EnableReturnURL && returnURL != "" {
+		// Store return URL associated with state (in production, use Redis)
+		h.statesMutex.Lock()
+		// Store as "state:returnurl" for retrieval in callback
+		h.states[state+":return"] = time.Now().Add(10 * time.Minute)
+		c.SetCookie(
+			"EBS_SSO_RETURN",
+			returnURL,
+			600, // 10 minutes
+			"/",
+			h.config.EBS.CookieDomain,
+			h.config.EBS.CookieSecure,
+			true,
+		)
+		h.statesMutex.Unlock()
+		
+		h.logger.WithFields(logrus.Fields{
+			"state":      state,
+			"return_url": returnURL,
+		}).Info("Captured return URL for deep link")
 	}
 
 	h.logger.WithField("state", state).Info("Initiating OIDC login")
@@ -251,9 +281,24 @@ func (h *AuthHandler) Callback(c *gin.Context) {
 		"session_id": sessionID,
 	}).Info("Successfully created EBS session, redirecting to EBS")
 
-	// Redirect to EBS home page
-	ebsURL := h.config.EBS.BaseURL + h.config.EBS.HomePage
-	c.Redirect(http.StatusFound, ebsURL)
+	// Determine redirect URL - check for return URL (deep link support)
+	redirectURL := h.config.EBS.BaseURL + h.config.EBS.HomePage
+	
+	if h.config.EBS.EnableReturnURL {
+		// Check for stored return URL
+		if returnURL, err := c.Cookie("EBS_SSO_RETURN"); err == nil && returnURL != "" {
+			// Validate return URL is for the same EBS domain
+			if h.isValidReturnURL(returnURL) {
+				redirectURL = returnURL
+				h.logger.WithField("return_url", returnURL).Info("Redirecting to captured return URL")
+			}
+			// Clear the return URL cookie
+			c.SetCookie("EBS_SSO_RETURN", "", -1, "/", h.config.EBS.CookieDomain, h.config.EBS.CookieSecure, true)
+		}
+	}
+	
+	// Redirect to EBS (home page or return URL)
+	c.Redirect(http.StatusFound, redirectURL)
 }
 
 // setEBSCookies sets the required EBS session cookies
@@ -292,6 +337,36 @@ func (h *AuthHandler) setEBSCookies(c *gin.Context, sessionID string) {
 	)
 
 	h.logger.WithField("session_id", sessionID).Debug("Set EBS session cookies")
+}
+
+// isValidReturnURL validates that a return URL is safe and belongs to EBS domain
+func (h *AuthHandler) isValidReturnURL(returnURL string) bool {
+	// Check if URL starts with EBS base URL
+	if !strings.HasPrefix(returnURL, h.config.EBS.BaseURL) {
+		h.logger.WithField("return_url", returnURL).Warn("Return URL does not match EBS base URL")
+		return false
+	}
+	
+	// Additional validation if allowed paths are configured
+	if len(h.config.EBS.AllowedPaths) > 0 {
+		// Extract path from full URL
+		urlPath := strings.TrimPrefix(returnURL, h.config.EBS.BaseURL)
+		
+		// Check if path matches any allowed pattern
+		for _, pattern := range h.config.EBS.AllowedPaths {
+			if matchesPattern(urlPath, pattern) {
+				return true
+			}
+		}
+		
+		h.logger.WithFields(logrus.Fields{
+			"return_url": returnURL,
+			"url_path":   urlPath,
+		}).Warn("Return URL path not in allowed paths")
+		return false
+	}
+	
+	return true
 }
 
 // Logout handles the /logout route
@@ -353,4 +428,31 @@ func (h *AuthHandler) Health(c *gin.Context) {
 		"database":  dbHealthy,
 		"timestamp": time.Now().UTC().Format(time.RFC3339),
 	})
+}
+
+// matchesPattern checks if a path matches a pattern (supports wildcards)
+func matchesPattern(path, pattern string) bool {
+	// Simple wildcard matching
+	if pattern == "*" {
+		return true
+	}
+	
+	// Exact match
+	if path == pattern {
+		return true
+	}
+	
+	// Wildcard at end: /path/*
+	if strings.HasSuffix(pattern, "/*") {
+		prefix := strings.TrimSuffix(pattern, "/*")
+		return strings.HasPrefix(path, prefix)
+	}
+	
+	// Wildcard at start: *.ext
+	if strings.HasPrefix(pattern, "*") {
+		suffix := strings.TrimPrefix(pattern, "*")
+		return strings.HasSuffix(path, suffix)
+	}
+	
+	return false
 }
