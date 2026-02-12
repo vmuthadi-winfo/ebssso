@@ -39,7 +39,32 @@ The EBS SSO Gateway enables modern OIDC authentication for Oracle EBS without re
 - Oracle Forms access (/forms/*)
 - Direct function and responsibility links
 
-For detailed information about WebADI, DBC files, and trusted nodes, see [WEBADI_GUIDE.md](WEBADI_GUIDE.md).
+### Resilience & Failure Handling (NEW)
+- **Circuit Breaker Pattern**: Prevents cascading failures across OIDC, DB, and EBS
+- **Automatic Retry Logic**: Handles transient failures with exponential backoff
+- **Timeout Management**: Per-dependency timeout configuration (OIDC/DB/EBS)
+- **Connection Pooling**: Efficient database connection management
+- **Health Monitoring**: Enhanced health checks with circuit breaker states
+
+### Session Management (NEW)
+- **Active Session Tracking**: Monitor all active sessions
+- **Auto-Refresh**: Extend sessions before expiry
+- **Concurrent Session Limits**: Prevent session exhaustion per user
+- **EBS Synchronization**: Align timeout with EBS profile settings
+- **Expiry Warnings**: Warn users before session expires
+- **Automatic Cleanup**: Remove expired sessions periodically
+
+### Authorization & Security (NEW)
+- **AD Group Filtering**: Control access based on Active Directory groups
+- **Wildcard Support**: Match groups with patterns (e.g., `EBS_*`, `*_Admins`)
+- **Flexible Strategies**: "Any" or "All" group matching
+- **Audit Logging**: Comprehensive authorization decision logging
+- **Permissive/Strict Modes**: Configure authorization behavior
+
+For detailed information about:
+- WebADI, DBC files, and trusted nodes: see [WEBADI_GUIDE.md](WEBADI_GUIDE.md)
+- Dependencies and failure scenarios: see [DEPENDENCIES_AND_FAILURES.md](DEPENDENCIES_AND_FAILURES.md)
+- Resilience and authorization features: see [RESILIENCE_SUMMARY.md](RESILIENCE_SUMMARY.md)
 
 ## Architecture
 
