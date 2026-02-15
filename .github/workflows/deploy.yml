@@ -1,0 +1,83 @@
+name: Deploy to Self-Hosted
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target Environment'
+        required: true
+        default: 'DEV'
+        type: choice
+        options:
+        - DEV
+        - TEST
+        - PROD
+      runner_label:
+        description: 'Self-hosted runner label'
+        required: true
+        default: 'self-hosted'
+      ebs_url:
+        description: 'EBS Base URL'
+        required: true
+      oidc_client_id:
+        description: 'OIDC Client ID'
+        required: true
+      oidc_client_secret:
+        description: 'OIDC Client Secret'
+        required: true
+      oidc_provider_url:
+        description: 'OIDC Provider URL'
+        required: true
+      oidc_redirect_url:
+         description: 'OIDC Redirect URL'
+         required: true
+         default: 'http://localhost:8080/callback'
+      cookie_domain:
+        description: 'Cookie Domain'
+        required: true
+        default: 'localhost'
+      trusted_node_secret:
+        description: 'Trusted Node Secret'
+        required: false
+      db_connection_string:
+        description: 'DB Connection String (if not using DBC)'
+        required: false
+      db_password:
+        description: 'DB Password (if not using DBC)'
+        required: false
+
+jobs:
+  deploy:
+    runs-on: ${{ inputs.runner_label }}
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+
+    - name: Build Binary
+      run: GOOS=linux GOARCH=amd64 go build -v -o ebssso
+
+    - name: Generate Config
+      run: |
+        chmod +x deployment/create_config.sh
+        ./deployment/create_config.sh
+      env:
+        EBS_URL: ${{ inputs.ebs_url }}
+        OIDC_CLIENT_ID: ${{ inputs.oidc_client_id }}
+        OIDC_CLIENT_SECRET: ${{ inputs.oidc_client_secret }}
+        OIDC_PROVIDER_URL: ${{ inputs.oidc_provider_url }}
+        OIDC_REDIRECT_URL: ${{ inputs.oidc_redirect_url }}
+        COOKIE_DOMAIN: ${{ inputs.cookie_domain }}
+        TRUSTED_NODE_SECRET: ${{ inputs.trusted_node_secret }}
+        DB_CONNECTION_STRING: ${{ inputs.db_connection_string }}
+        DB_PASSWORD: ${{ inputs.db_password }}
+        # Default DB User if not provided
+        DB_USER: "apps"
+
+    - name: Deploy
+      run: |
+        chmod +x deployment/update_deployment.sh
+        sudo ./deployment/update_deployment.sh

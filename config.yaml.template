@@ -1,0 +1,150 @@
+# EBS SSO Gateway Configuration Template
+# Copy this file to config.yaml and update with your environment-specific values
+
+# Environment name (DEV, TEST, PROD)
+environment: "DEV"
+
+# Server configuration
+server:
+  port: 8080
+  host: "0.0.0.0"
+  base_url: "http://localhost:8080"  # Public URL for redirect URIs
+
+# OIDC Provider Configuration
+oidc:
+  provider_url: "https://login.microsoftonline.com/{tenant-id}/v2.0"  # For Entra ID
+  # provider_url: "https://your-okta-domain.okta.com"  # For Okta
+  # provider_url: "https://your-ping-domain.com"  # For Ping
+  client_id: "your-client-id"
+  client_secret: "your-client-secret"
+  redirect_url: "http://localhost:8080/callback"
+  scopes:
+    - "openid"
+    - "profile"
+    - "email"
+  # Claim to use for user identification (email, upn, preferred_username)
+  user_claim: "email"
+  
+  # Group-Based Access Control (AD Groups)
+  group_claim: "groups"  # Claim containing user groups (e.g., "groups" for Entra ID)
+  allowed_groups:        # List of allowed AD groups (empty = allow all)
+    # - "EBS_Users"
+    # - "Finance_Team"
+  denied_groups:         # List of denied groups (takes precedence over allowed)
+    # - "Contractors"
+  require_group_match: false  # If true, user must be in at least one allowed group
+  group_match_strategy: "any"  # "any" (one group) or "all" (all groups)
+  
+  # Connection and retry settings
+  timeout: 30           # Connection timeout in seconds
+  max_retries: 3        # Number of retries for transient failures
+  retry_delay: 2        # Delay between retries in seconds
+
+# Oracle Database Configuration
+database:
+  # DBC File Method (Recommended for production - uses APPS_CONNECT UMX role)
+  use_dbc: false  # Set to true to use DBC file method
+  dbc_file: "/path/to/secure/appsweb.dbc"  # Path to EBS DBC file
+  apps_user: "SYSADMIN"  # Application user with APPS_CONNECT UMX role
+  
+  # Legacy Direct Connection Method (Deprecated)
+  username: "apps"
+  password: "apps_password"
+  connection_string: "localhost:1521/EBSDB"
+  # Format: host:port/service_name or (DESCRIPTION=...)
+  
+  # Connection Pool Settings
+  pool_size: 10
+  max_open_conns: 20
+  max_idle_conns: 5
+
+# EBS Configuration
+ebs:
+  base_url: "http://your-ebs-server:8000"
+  home_page: "/OA_HTML/AppsLogin"
+  
+  # Cookie domain for EBS cookies (e.g., .yourdomain.com)
+  cookie_domain: "localhost"
+  # Cookie secure flag (set to true in production with HTTPS)
+  cookie_secure: false
+  
+  # Trusted Node Configuration (for DBC file method)
+  trusted_node_name: "SSO_GATEWAY_NODE"
+  trusted_node_secret: "your-node-secret"  # Shared secret for trusted node
+  
+  # EBS Request Proxy Support (for WebADI, forms, etc.)
+  enable_proxy: true  # Enable proxying authenticated EBS requests
+  enable_return_url: true  # Enable deep link support (WebADI, forms)
+  max_upload_size: 104857600  # Max upload size in bytes (100MB default)
+  
+  # Allowed paths for proxy (empty = allow all)
+  allowed_paths:
+    - "/OA_HTML/*"
+    - "/webadi/*"
+    - "/servlets/*"
+    - "/forms/*"
+    - "/oa_servlets/*"
+    - "/servlet/*"
+
+# Logging Configuration
+logging:
+  level: "info"  # debug, info, warn, error
+  format: "json"  # json or text
+  output: "stdout"  # stdout or file path
+
+# Session Configuration
+session:
+  timeout_minutes: 480  # 8 hours
+  cookie_name: "EBS_SSO_SESSION"
+  
+  # Session synchronization with EBS
+  sync_with_ebs: true            # Sync SSO timeout with EBS session timeout
+  refresh_before_expiry: 5       # Minutes before expiry to trigger refresh
+  enable_auto_refresh: true      # Enable automatic session refresh
+  
+  # Session monitoring and cleanup
+  enable_session_tracking: true  # Track active sessions
+  cleanup_interval: 10           # Cleanup interval in minutes
+  max_concurrent_sessions: 0     # Max concurrent sessions per user (0 = unlimited)
+  
+  # Warning and grace period
+  expiry_warning_minutes: 10     # Minutes before expiry to warn user
+  grace_period_minutes: 5        # Grace period after session expiry
+
+# Resilience and Failure Handling
+resilience:
+  # Circuit breaker settings
+  enable_circuit_breaker: true
+  failure_threshold: 5           # Number of failures before opening circuit
+  success_threshold: 2           # Number of successes to close circuit
+  circuit_timeout: 60            # Timeout before trying again in seconds
+  
+  # Retry settings
+  enable_retry: true
+  max_retries: 3                 # Max retry attempts
+  retry_delay: 2                 # Initial retry delay in seconds
+  retry_backoff: true            # Use exponential backoff
+  
+  # Timeout settings
+  database_timeout: 10           # DB operation timeout in seconds
+  oidc_timeout: 30               # OIDC operation timeout in seconds
+  ebs_timeout: 30                # EBS operation timeout in seconds
+  
+  # Health check settings
+  enable_health_check: true
+  health_check_interval: 60      # Health check interval in seconds
+
+# Authorization Configuration
+authorization:
+  # Enable authorization checks
+  enable_authorization: false    # Set to true to enable group-based authorization
+  
+  # Access control mode
+  mode: "permissive"             # "permissive" or "strict"
+  
+  # Failed authorization action
+  on_failure_action: "deny"      # "deny" or "log"
+  
+  # Audit logging
+  enable_audit_log: true
+  audit_log_path: "/var/log/ebssso/audit.log"

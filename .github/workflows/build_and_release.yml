@@ -1,0 +1,71 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Create a release?'
+        required: true
+        type: boolean
+        default: false
+      version:
+        description: 'Release version (e.g., v1.0.0)'
+        required: false
+        type: string
+        default: 'v0.0.1'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+
+    - name: Build Linux
+      run: GOOS=linux GOARCH=amd64 go build -v -o ebssso-linux-amd64
+
+    - name: Build Windows
+      run: GOOS=windows GOARCH=amd64 go build -v -o ebssso-windows-amd64.exe
+
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ebssso-binaries
+        path: |
+          ebssso-linux-amd64
+          ebssso-windows-amd64.exe
+
+  release:
+    needs: build
+    if: ${{ github.event.inputs.create_release == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Download Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: ebssso-binaries
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ github.event.inputs.version }}
+        name: Release ${{ github.event.inputs.version }}
+        draft: false
+        prerelease: false
+        files: |
+          ebssso-linux-amd64
+          ebssso-windows-amd64.exe
+          deployment/deploy.sh
+          deployment/ebssso.service
+          config.yaml.template
+          templates/*
